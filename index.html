@@ -142,7 +142,7 @@ function startSync(){
     if(!loaded){loaded=true;checkMig();buildQueue();render()}
     else if(tab=='l'||tab=='r')render();
   },e=>{msg='同步失敗：'+(e.code||e.message);loaded=true;render()}));
-  unsubs.push(onSnapshot(doc(db,'users',user.uid,'meta','settings'),s=>{if(s.exists())S={...DS,...s.data()}},()=>{}));
+  unsubs.push(onSnapshot(doc(db,'users',user.uid,'meta','settings'),s=>{if(!s.exists())return;const o=S;S={...DS,...s.data()};if(loaded&&(o.maxRev!=S.maxRev||o.maxNew!=S.maxNew)){buildQueue();if(tab=='r')render()}},()=>{}));
 }
 function localCards(){let a=[];try{a=JSON.parse(localStorage.getItem('vocab-v2')||localStorage.getItem('vocab-v1')||'null')||[]}catch(e){}
   a.forEach(c=>{if(!c.senses)c.senses=[{pos:'',def:'',zh:c.m||'',ex:c.e?[{en:c.e,zh:''}]:[]}]});return a}
