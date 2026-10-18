@@ -34,19 +34,24 @@ label{color:var(--mut);font-size:.9rem}
 <nav><button data-t="r">複習</button><button data-t="a">新增</button><button data-t="l">單字庫</button><button data-t="s">設定</button></nav>
 <div id="v"></div></main>
 <script type="module">
-import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {getAuth,GoogleAuthProvider,signInWithPopup,signInWithRedirect,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {getFirestore,initializeFirestore,persistentLocalCache,persistentMultipleTabManager,collection,doc,setDoc,deleteDoc,onSnapshot,writeBatch} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-const app=initializeApp({apiKey:"AIzaSyA5U7FilyYPkbjGoPW_dHu9yxZlzyJ8wpA",authDomain:"evcards-664e1.firebaseapp.com",projectId:"evcards-664e1",storageBucket:"evcards-664e1.firebasestorage.app",messagingSenderId:"742154967898",appId:"1:742154967898:web:7368f41f827395bc2bf163"});
-const auth=getAuth(app);
-let db;try{db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})})}catch(e){db=getFirestore(app)}
+let initializeApp,getAuth,GoogleAuthProvider,signInWithPopup,signInWithRedirect,onAuthStateChanged,signOut,getFirestore,initializeFirestore,persistentLocalCache,persistentMultipleTabManager,collection,doc,setDoc,deleteDoc,onSnapshot,writeBatch,auth,db,fb=false,guest=false;
+async function initFirebase(){
+  const V='https://www.gstatic.com/firebasejs/10.12.2/';
+  const [A,U,F]=await Promise.all([import(V+'firebase-app.js'),import(V+'firebase-auth.js'),import(V+'firebase-firestore.js')]);
+  ({initializeApp}=A);({getAuth,GoogleAuthProvider,signInWithPopup,signInWithRedirect,onAuthStateChanged,signOut}=U);
+  ({getFirestore,initializeFirestore,persistentLocalCache,persistentMultipleTabManager,collection,doc,setDoc,deleteDoc,onSnapshot,writeBatch}=F);
+  const app=initializeApp({apiKey:"AIzaSyA5U7FilyYPkbjGoPW_dHu9yxZlzyJ8wpA",authDomain:"evcards-664e1.firebaseapp.com",projectId:"evcards-664e1",storageBucket:"evcards-664e1.firebasestorage.app",messagingSenderId:"742154967898",appId:"1:742154967898:web:7368f41f827395bc2bf163"});
+  auth=getAuth(app);
+  try{db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})})}catch(e){db=getFirestore(app)}
+  fb=true;
+}
 const day=()=>Math.floor(Date.now()/864e5);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const g=id=>document.getElementById(id).value.trim();
 let cards=[],tab='r',queue=[],flip=false,msg='',editId=null,draft='',user=null,ready=false,loaded=false,ctr=0,unsubs=[];
-const DS={acc:'en-US',mode:'sm2',first:1,second:3,easy1:4,hard:1.2,bonus:1.3,ease:2.5,ladder:'1,2,4,7,15,30,60'};
+const DS={acc:'en-US',maxRev:0,maxNew:0,mode:'sm2',first:1,second:3,easy1:4,hard:1.2,bonus:1.3,ease:2.5,ladder:'1,2,4,7,15,30,60'};
 let S={...DS};
-const saveS=()=>{if(user)setDoc(doc(db,'users',user.uid,'meta','settings'),S).catch(()=>{})};
+const saveS=()=>{if(guest){try{localStorage.setItem('vocab-guest-set',JSON.stringify(S))}catch(e){}return}if(user)setDoc(doc(db,'users',user.uid,'meta','settings'),S).catch(()=>{})};
 const R=n=>Math.max(1,Math.round(n));
 function calc(c,q){
   let L=String(S.ladder).split(',').map(Number).filter(n=>n>0);if(!L.length)L=[1];
@@ -57,10 +62,10 @@ function calc(c,q){
   return{iv:r==0?R(S.easy1):R(Math.max(c.iv,1)*c.ease*S.bonus),ease:c.ease+.15,reps:r+1};
 }
 const CJK=/[\u3400-\u9fff]/,POS=/^(noun|verb|adjective|adverb|preposition|conjunction|pronoun|determiner|exclamation|interjection|modal verb|phrasal verb|auxiliary verb|idiom|abbreviation|prefix|suffix|number)(\s*[\[(][^\])]*[\])])*(\s+(very informal|very formal|informal|formal|specialized|slang|literary|old-fashioned|humorous|disapproving|approving|offensive|dated))*$/i;
-const NOISE=/^(Add to word list|Show more|Show less|See more|More examples|Fewer examples|Examples|Collocations|SMART Vocabulary.*|Translations? of .*|\(Definition of .*|(uk|us|UK|US)|(uk|us|UK|US)\b.*\/.*|\/[^\/]+\/( (uk|us|UK|US))?|\([A-Z][A-Z ,'\/-]*\))$/;
+const NOISE=/^(Add to word list|Show more|Show less|See more|More examples|Fewer examples|Examples|Collocations|SMART Vocabulary.*|Translations? of .*|\(Definition of .*|(uk|us|UK|US)|(uk|us|UK|US)\b.*\/.*|\/[^\/]+\/( (uk|us|UK|US))?|\((?:(?![\u3400-\u9fff])[^)])*\))$/;
 const LB='(very )?(in)?formal|specialized|slang|literary|old-fashioned|old use|humorous|disapproving|approving|offensive|figurative|dated|rare|trademark|often|usually|sometimes|(mainly )?(UK|US|Australian|Canadian|Irish|Scottish|Indian)';
 const LABEL=new RegExp('^('+LB+')([ ,]+('+LB+'))*$','i');
-const LEVEL=new RegExp('^[ABC][12]([ ,]+('+LB+'))*$','i');
+const LEVEL=new RegExp('^[ABC][12]([ ,]+('+LB+'))*(\\s*\\([^)]*\\))?$','i');
 const SYN=/^(同義詞|反義詞|比較|相關詞|另見|也請參見|另請參見|請參見|Synonyms?|Antonyms?|Opposites?|Compare|Related words?|See also)$/i;
 const clean=t=>t.replace(/\[\[\s*([^\]]*?)\s*\]\]\([^)]*\)/g,'[$1]').replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/([.!?])(?=[\u3400-\u9fff])/g,'$1\n').split('\n').map(l=>l.replace(/^([A-Za-z"“'‘][^\u3400-\u9fff]*[A-Za-z0-9.!?'"’”)])(?=[\u3400-\u9fff（])/,(m,a)=>/\s/.test(a)?a+'\n':a)).join('\n');
 const MORE=/^(顯示更多|更多範例|[減减]少例句|更多例句|更少例句|Show (more|fewer)|More examples|Fewer examples)$/i;
@@ -100,12 +105,22 @@ const toText=c=>[c.w,...c.senses.flatMap(s=>[s.pos,s.def,s.zh,...s.ex.flatMap(e=
 const mk=o=>({id:nid(),w:o.w,senses:o.senses,ease:+S.ease||2.5,iv:0,due:day(),reps:0});
 const nid=()=>Date.now().toString(36)+(ctr++%46656).toString(36).padStart(3,'0')+Math.random().toString(36).slice(2,5);
 const cref=id=>doc(db,'users',user.uid,'cards',String(id));
-const saveCard=c=>{const d={...c};delete d.id;return setDoc(cref(c.id),d).catch(e=>{msg='儲存失敗：'+(e.code||e.message);render()})};
-const delCard=id=>deleteDoc(cref(id)).catch(e=>{msg='刪除失敗：'+(e.code||e.message);render()});
+const saveCard=c=>{if(guest){if(!cards.includes(c))cards.push(c);gsave();return Promise.resolve()}const d={...c};delete d.id;return setDoc(cref(c.id),d).catch(e=>{msg='儲存失敗：'+(e.code||e.message);render()})};
+const delCard=id=>guest?(cards=cards.filter(c=>c.id!=id),gsave(),render(),Promise.resolve()):deleteDoc(cref(id)).catch(e=>{msg='刪除失敗：'+(e.code||e.message);render()});
 const due=()=>cards.filter(c=>c.due<=day());
-function buildQueue(){queue=due().sort(()=>Math.random()-.5);flip=false}
+const isNew=c=>!(c.seen||c.iv>0||c.reps>0);
+function buildQueue(){
+  const t=day(),sh=a=>a.sort(()=>Math.random()-.5),lim=(n,d)=>n>0?Math.max(0,n-d):Infinity;
+  const dueAll=cards.filter(c=>c.due<=t);
+  const newDone=cards.filter(c=>c.firstDay==t).length,revDone=cards.filter(c=>c.lastDay==t&&c.firstDay!=t).length;
+  const inprog=dueAll.filter(c=>c.lastDay==t),rest=dueAll.filter(c=>c.lastDay!=t);
+  const revs=sh(rest.filter(c=>!isNew(c))).slice(0,lim(+S.maxRev,revDone));
+  const news=sh(rest.filter(isNew)).slice(0,lim(+S.maxNew,newDone));
+  queue=sh([...inprog,...revs,...news]);flip=false;
+}
 function rate(q){
   const c=queue.shift();
+  if(isNew(c))c.firstDay=day();c.seen=true;c.lastDay=day();
   if(q==0){c.ease=Math.max(1.3,c.ease-.2);c.reps=0;c.iv=0;c.due=day();queue.push(c)}
   else{const x=calc(c,q);c.iv=x.iv;c.ease=x.ease;c.reps=x.reps;c.due=day()+c.iv}
   saveCard(c);flip=false;render();
@@ -136,7 +151,33 @@ function checkMig(){
   try{localStorage.setItem(k,'1')}catch(e){}
   if(confirm('偵測到這台裝置上有 '+L.length+' 張本機單字，要上傳到雲端嗎？'))upload(L).then(n=>{msg='已上傳 '+n+' 張';render()}).catch(e=>{msg='上傳失敗：'+(e.code||e.message);render()});
 }
+const GSEED=`appliance
+noun
+a device, machine, or piece of equipment, especially an electrical one that is used in the house
+裝置，器械;（尤指）家用電器
+electric/domestic/household appliances
+電器／家用電器／家電
+
+crawl
+verb
+to move along on hands and knees or with your body stretched out along a surface
+緩慢移動；艱難前行；爬行；匍匐前進
+The child crawled across the floor.
+那個孩子爬過了地板。
+noun
+a style of swimming in which you move your arms over your head and kick with straight legs
+自由泳;爬泳`;
+const gsave=()=>{try{localStorage.setItem('vocab-guest-v1',JSON.stringify(cards))}catch(e){}};
+function enterGuest(){
+  guest=true;user={uid:'guest',email:'試用模式'};
+  try{cards=JSON.parse(localStorage.getItem('vocab-guest-v1')||'null')||[]}catch(e){cards=[]}
+  try{S={...DS,...JSON.parse(localStorage.getItem('vocab-guest-set')||'{}')}}catch(e){}
+  if(!cards.length){cards=parse(GSEED).map(mk);gsave()}
+  ready=true;loaded=true;msg='';tab='r';buildQueue();render();
+}
+function exitGuest(){guest=false;user=null;cards=[];queue=[];msg='';render()}
 async function login(){
+  if(!fb){msg='目前無法連線到 Google 登入服務，請改用試用模式，或稍後再試';render();return}
   const p=new GoogleAuthProvider();
   try{await signInWithPopup(auth,p)}catch(e){
     if(e.code=='auth/popup-blocked')signInWithRedirect(auth,p);
@@ -150,20 +191,24 @@ function render(){
   const v=document.getElementById('v');
   document.querySelector('nav').style.display=user?'':'none';
   if(!ready||(user&&!loaded)){v.innerHTML='<div class="stat">載入中…</div><p class="stat">'+msg+'</p>';return}
-  if(!user){v.innerHTML=`<div class="card"><div class="word">單字卡</div><div class="ex">登入後，單字與複習進度會在所有裝置同步</div></div><div class="row"><button class="btn pri" id="li">使用 Google 登入</button></div><p class="stat">${msg}</p>`;document.getElementById('li').onclick=login;return}
+  if(!user){v.innerHTML=`<div class="card"><div class="word">單字卡</div><div class="ex">登入後，單字與複習進度會在所有裝置同步</div></div><div class="row"><button class="btn pri" id="li">使用 Google 登入</button></div><div class="row"><button class="btn" id="gs">不登入，先試用（資料只存這台裝置）</button></div><p class="stat">${msg}</p>`;document.getElementById('li').onclick=login;document.getElementById('gs').onclick=enterGuest;return}
   if(tab=='s')return renderSet(v);
   if(tab=='r'){
     if(!queue.length){v.innerHTML=`<div class="card"><div class="word">🎉</div><div class="ex">${cards.length?'今天的複習完成了！共 '+cards.length+' 張卡片，明天再來':'還沒有單字，先到「新增」頁貼上單字吧'}</div></div><div class="row"><button class="btn" id="again">再複習一輪（全部）</button></div>`;
       document.getElementById('again').onclick=()=>{queue=cards.slice().sort(()=>Math.random()-.5);render()};return}
     const c=queue[0];
-    v.innerHTML=`<div class="stat">待複習 ${queue.length} 張</div><div class="card" id="cd"><div class="word">${esc(c.w)}</div><div class="acc">${[['US','en-US'],['UK','en-GB'],['AU','en-AU']].map(a=>`<button class="ab" data-a="${a[1]}"><b>${a[0]}</b> 🔊</button>`).join('')}</div>${flip?c.senses.map(sense).join(''):'<div class="ex">點一下卡片顯示答案</div>'}</div>`+
+    v.innerHTML=`<div class="stat">待複習 ${queue.length} 張（新單字 ${queue.filter(isNew).length}・複習 ${queue.filter(c=>!isNew(c)).length}）</div><div class="card" id="cd"><div class="word">${esc(c.w)}</div><div class="acc">${[['US','en-US'],['UK','en-GB'],['AU','en-AU']].map(a=>`<button class="ab" data-a="${a[1]}"><b>${a[0]}</b> 🔊</button>`).join('')}</div>${flip?c.senses.map(sense).join(''):'<div class="ex">點一下卡片顯示答案</div>'}</div>`+
     (flip?`<div class="row">${['忘記','困難','記得','簡單'].map((t,i)=>`<button data-q="${i}">${t}<small>${nextLabel(c,i)}</small></button>`).join('')}</div>`:`<div class="row"><button class="btn pri" id="show">顯示答案</button></div>`);
     v.querySelectorAll('[data-a]').forEach(b=>b.onclick=e=>{e.stopPropagation();speak(c.w,b.dataset.a)});
     if(!flip){const f=()=>{flip=true;render()};document.getElementById('cd').onclick=f;document.getElementById('show').onclick=f}
     v.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>rate(+b.dataset.q));
   }else if(tab=='a'){
-    v.innerHTML=`<label>${editId?'編輯卡片':'貼上單字內容，可一次貼多個單字（單字之間空一行）'}</label><textarea id="tx" rows="14" placeholder="appliance&#10;noun&#10;英文解釋&#10;中文意思&#10;英文例句&#10;例句翻譯">${esc(draft)}</textarea><div class="row"><button class="btn" id="pv">整理預覽</button><button class="btn pri" id="add">${editId?'儲存修改':'新增／匯入'}</button>${editId?'<button class="btn" id="cx">取消編輯</button>':''}</div><p class="stat">${msg}</p><p class="stat">格式：第一行是單字；接著依序寫詞性、英文解釋、中文意思；之後每個例句寫一行英文、下一行中文翻譯（翻譯可省略）。同一個單字有多個詞性，就接著寫下一個詞性。直接貼劍橋字典的內容也可以，音標、等級（C2 等）、Add to word list 、同義詞／反義詞／比較清單、formal 之類的標籤與網址連結等多餘文字會自動濾掉，只留下單字、詞性、解釋、中文與例句；按「整理預覽」可先看清理後的結果。</p>`;
-    document.getElementById('pv').onclick=()=>{const t=document.getElementById('tx'),a=parse(t.value);if(a.length)t.value=a.map(toText).join('\n\n')};
+    v.innerHTML=`<label>${editId?'編輯卡片':'貼上單字內容，可一次貼多個單字（單字之間空一行）'}</label><textarea id="tx" rows="14" placeholder="appliance&#10;noun&#10;英文解釋&#10;中文意思&#10;英文例句&#10;例句翻譯">${esc(draft)}</textarea><div class="row"><button class="btn" id="pv">整理預覽</button><button class="btn pri" id="add">${editId?'儲存修改':'新增／匯入'}</button>${editId?'<button class="btn" id="cx">取消編輯</button>':''}</div><p class="stat">${msg}</p><div id="pvbox"></div><p class="stat">格式：第一行是單字；接著依序寫詞性、英文解釋、中文意思；之後每個例句寫一行英文、下一行中文翻譯（翻譯可省略）。同一個單字有多個詞性，就接著寫下一個詞性。直接貼劍橋字典的內容也可以，音標、等級（C2 等）、Add to word list 、同義詞／反義詞／比較清單、formal 之類的標籤與網址連結等多餘文字會自動濾掉，只留下單字、詞性、解釋、中文與例句；按「整理預覽」可先看清理後的結果。</p>`;
+    document.getElementById('pv').onclick=()=>{const t=document.getElementById('tx'),a=parse(t.value),b=document.getElementById('pvbox');
+      if(!a.length){b.innerHTML='<p class="stat">沒有偵測到單字</p>';return}
+      t.value=a.map(toText).join('\n\n');
+      b.innerHTML='<p class="stat">預覽：單字卡背面的樣子（共 '+a.length+' 張）</p>'+a.map(c=>`<div class="card" style="margin-bottom:12px"><div class="word">${esc(c.w)}</div>${c.senses.map(sense).join('')}</div>`).join('');
+      b.scrollIntoView({behavior:'smooth',block:'nearest'})};
     document.getElementById('add').onclick=()=>{const arr=parse(document.getElementById('tx').value);
       if(!arr.length){msg='沒有偵測到單字';render();return}
       if(editId){const c=cards.find(x=>x.id==editId);if(c){c.w=arr[0].w;c.senses=arr[0].senses;saveCard(c)}msg='已儲存 ✓'}
@@ -181,20 +226,20 @@ function renderSet(v){
   v.innerHTML=`<label>排程模式</label><select id="md" style="width:100%;padding:10px;margin:4px 0 12px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--fg);font:inherit"><option value="sm2">自動（SM-2，間隔隨熟悉度成長）</option><option value="ladder">固定階梯（自訂每階天數）</option></select>`+
   (S.mode=='ladder'?`<label>階梯天數（逗號分隔；「記得」升一階，「簡單」升兩階，「困難」退一階）</label><input id="ld" value="${esc(S.ladder)}">`:
   n('first','第一次「記得」的間隔（天）')+n('second','第二次「記得」的間隔（天）')+n('easy1','第一次「簡單」的間隔（天）')+n('hard','「困難」的間隔倍率',.1)+n('bonus','「簡單」的額外倍率',.1)+n('ease','新卡片初始難度係數（越大，間隔成長越快）',.1))+
-  `<button class="btn pri" id="sv" style="width:100%">儲存設定</button><button class="btn" id="rs" style="width:100%;margin-top:8px">還原預設</button><p class="stat">${msg}</p><p class="stat">設定只影響之後的評分，已排好的到期日不會改變。</p><hr style="border:0;border-top:1px solid var(--bd);margin:20px 0"><p class="stat">已登入：${esc(user.email||'')}</p><button class="btn" id="up" style="width:100%">上傳這台裝置的舊資料到雲端</button><button class="btn" id="lo" style="width:100%;margin-top:8px">登出</button>`;
+  `<hr style="border:0;border-top:1px solid var(--bd);margin:8px 0 16px"><label>每日「複習」單字上限（看過的舊單字；0 = 不限制）</label><input type="number" min="0" data-k="maxRev" data-z="1" value="${S.maxRev}"><label>每日「新單字」上限（從沒看過的；0 = 不限制）</label><input type="number" min="0" data-k="maxNew" data-z="1" value="${S.maxNew}"><button class="btn pri" id="sv" style="width:100%">儲存設定</button><button class="btn" id="rs" style="width:100%;margin-top:8px">還原預設</button><p class="stat">${msg}</p><p class="stat">設定只影響之後的評分，已排好的到期日不會改變。</p><hr style="border:0;border-top:1px solid var(--bd);margin:20px 0"><p class="stat">${guest?'試用模式：資料只存在這台裝置，不會同步':'已登入：'+esc(user.email||'')}</p>${guest?'':'<button class="btn" id="up" style="width:100%">上傳這台裝置的舊資料到雲端</button>'}<button class="btn" id="lo" style="width:100%;margin-top:8px">${guest?'離開試用模式':'登出'}</button>`;
   const md=document.getElementById('md');md.value=S.mode;
   md.onchange=()=>{S.mode=md.value;saveS();msg='';render()};
   document.getElementById('sv').onclick=()=>{
-    v.querySelectorAll('[data-k]').forEach(i=>{const x=parseFloat(i.value);S[i.dataset.k]=isNaN(x)?DS[i.dataset.k]:Math.max(1,x)});
+    v.querySelectorAll('[data-k]').forEach(i=>{const x=parseFloat(i.value);S[i.dataset.k]=isNaN(x)?DS[i.dataset.k]:(i.dataset.z?Math.floor(Math.max(0,x)):Math.max(1,x))});
     const ld=document.getElementById('ld');if(ld)S.ladder=ld.value.replace(/[^0-9,]/g,'')||DS.ladder;
     saveS();msg='已儲存 ✓';render()};
   document.getElementById('rs').onclick=()=>{S={...DS};saveS();msg='已還原預設';render()};
-  document.getElementById('lo').onclick=()=>signOut(auth);
-  document.getElementById('up').onclick=()=>{const L=localCards();if(!L.length){msg='這台裝置沒有本機舊資料';render();return}upload(L).then(n=>{msg='已上傳 '+n+' 張（重複的單字已略過）';render()}).catch(e=>{msg='上傳失敗：'+(e.code||e.message);render()})};
+  document.getElementById('lo').onclick=()=>guest?exitGuest():signOut(auth);
+  if(!guest)document.getElementById('up').onclick=()=>{const L=localCards();if(!L.length){msg='這台裝置沒有本機舊資料';render();return}upload(L).then(n=>{msg='已上傳 '+n+' 張（重複的單字已略過）';render()}).catch(e=>{msg='上傳失敗：'+(e.code||e.message);render()})};
 }
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;msg='';editId=null;draft='';if(tab=='r')buildQueue();render()});
 document.addEventListener('keydown',e=>{if(tab!='r'||!queue.length||/INPUT|TEXTAREA/.test(e.target.tagName))return;
   if(e.key==' '&&!flip){e.preventDefault();flip=true;render()}else if(flip&&'1234'.includes(e.key))rate(+e.key-1)});
-onAuthStateChanged(auth,u=>{user=u;ready=true;if(u)startSync();else{stopSync();cards=[];queue=[]}render()});
+initFirebase().then(()=>onAuthStateChanged(auth,u=>{if(guest&&!u)return;user=u;ready=true;if(u)startSync();else{stopSync();cards=[];queue=[]}render()})).catch(()=>{ready=true;msg='無法連線到 Google 登入服務，可先使用試用模式';render()});
 render();
 </script></body></html>
