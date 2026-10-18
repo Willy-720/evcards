@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>單字卡 · 間隔複習</title>
+<style>
+:root{--bg:#faf8f5;--fg:#25231f;--mut:#6f6b63;--card:#fff;--bd:#e4dfd6;--ac:#c2410c;--on:#fff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1a18;--fg:#f0ece4;--mut:#a39e93;--card:#262421;--bd:#3a3733;--ac:#fb923c;--on:#1b1a18}}
+:root[data-theme="dark"]{--bg:#1b1a18;--fg:#f0ece4;--mut:#a39e93;--card:#262421;--bd:#3a3733;--ac:#fb923c;--on:#1b1a18}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Noto Sans TC","PingFang TC",sans-serif}
+main{max-width:600px;margin:0 auto;padding:16px}
+nav{display:flex;gap:6px;margin-bottom:18px}
+nav button{flex:1;padding:10px 4px;border:1px solid var(--bd);background:var(--card);color:var(--mut);border-radius:10px;font:inherit;cursor:pointer}
+nav button.on{background:var(--ac);color:var(--on);border-color:var(--ac)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:24px 20px;min-height:180px;display:flex;flex-direction:column;justify-content:center;gap:6px}
+.word{font:600 2.2rem/1.2 Georgia,serif;text-align:center}
+.ex{color:var(--mut);font-style:italic;text-align:center}
+.stat{color:var(--mut);font-size:.9rem;margin:8px 0;text-align:center}
+.sense{border-top:1px solid var(--bd);padding-top:10px;margin-top:6px;text-align:left}
+.pos{display:inline-block;font-size:.75rem;color:var(--ac);border:1px solid var(--ac);border-radius:6px;padding:0 6px;margin-right:6px}
+.def{color:var(--mut);font-size:.92rem}.zh{font-weight:600;font-size:1.15rem;margin:2px 0}
+.exs{margin:6px 0 0;padding:0;list-style:none}.exs li{margin:6px 0}.exs .z{color:var(--mut);font-size:.9rem}
+.row{display:flex;gap:8px;margin-top:14px}
+.row button,.btn{flex:1;padding:12px 6px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--fg);font:inherit;cursor:pointer}
+.row button small{display:block;color:var(--mut);font-size:.75rem}
+.pri{background:var(--ac)!important;color:var(--on)!important;border-color:var(--ac)!important}
+input,textarea{width:100%;box-sizing:border-box;padding:10px;margin:4px 0 12px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--fg);font:inherit}
+label{color:var(--mut);font-size:.9rem}
+.item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--bd)}
+.item span{color:var(--mut)}.x{background:none;border:0;color:var(--mut);cursor:pointer;font-size:1.1rem}
+.sp{background:none;border:0;font-size:1.3rem;cursor:pointer}
+</style></head><body><main>
+<nav><button data-t="r">複習</button><button data-t="a">新增</button><button data-t="l">單字庫</button><button data-t="s">設定</button></nav>
+<div id="v"></div></main>
+<script>
+const K='vocab-v2',day=()=>Math.floor(Date.now()/864e5);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const g=id=>document.getElementById(id).value.trim();
+let cards=[],tab='r',queue=[],flip=false,msg='',editId=null,draft='';
+/* ---- settings & scheduling ---- */
+const DS={mode:'sm2',first:1,second:3,easy1:4,hard:1.2,bonus:1.3,ease:2.5,ladder:'1,2,4,7,15,30,60'};
+let S={...DS};try{S={...DS,...JSON.parse(localStorage.getItem('vocab-set')||'{}')}}catch(e){}
+const saveS=()=>{try{localStorage.setItem('vocab-set',JSON.stringify(S))}catch(e){}};
+const R=n=>Math.max(1,Math.round(n));
+function calc(c,q){
+  let L=String(S.ladder).split(',').map(Number).filter(n=>n>0);if(!L.length)L=[1];
+  const r=c.reps||0,k=i=>L[Math.min(Math.max(i,0),L.length-1)];
+  if(S.mode=='ladder')return q==1?{iv:k(r-1),ease:c.ease,reps:r}:q==2?{iv:k(r),ease:c.ease,reps:r+1}:{iv:k(r+1),ease:c.ease,reps:r+2};
+  if(q==1)return{iv:R(c.iv*S.hard),ease:Math.max(1.3,c.ease-.15),reps:r+1};
+  if(q==2)return{iv:r==0?R(S.first):r==1?R(S.second):R(c.iv*c.ease),ease:c.ease,reps:r+1};
+  return{iv:r==0?R(S.easy1):R(Math.max(c.iv,1)*c.ease*S.bonus),ease:c.ease+.15,reps:r+1};
+}
+/* ---- card text format ---- */
+const CJK=/[\u3400-\u9fff]/,POS=/^(noun|verb|adjective|adverb|preposition|conjunction|pronoun|determiner|exclamation|interjection|modal verb|phrasal verb|auxiliary verb|idiom|abbreviation|prefix|suffix|number)(\s*[\[(][^\])]*[\])])*(\s+(very informal|very formal|informal|formal|specialized|slang|literary|old-fashioned|humorous|disapproving|approving|offensive|dated))*$/i;
+const NOISE=/^(Add to word list|Show more|Show less|See more|More examples|Fewer examples|Examples|Collocations|SMART Vocabulary.*|Translations? of .*|\(Definition of .*|[ABC][12]|(uk|us|UK|US)|(uk|us|UK|US)\b.*\/.*|\/[^\/]+\/( (uk|us|UK|US))?|\([A-Z][A-Z ,'\/-]*\))$/;
+const LB='(very )?(in)?formal|specialized|slang|literary|old-fashioned|old use|humorous|disapproving|approving|offensive|figurative|dated|rare|trademark|(mainly )?(UK|US|Australian|Canadian|Irish|Scottish|Indian)';
+const LABEL=new RegExp('^('+LB+')([ ,]+('+LB+'))*$','i');
+const SYN=/^(同義詞|反義詞|比較|相關詞|另見|也請參見|另請參見|請參見|Synonyms?|Antonyms?|Opposites?|Compare|Related words?|See also)$/i;
+const clean=t=>t.replace(/\[\[\s*([^\]]*?)\s*\]\]\([^)]*\)/g,'[$1]').replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/([.!?])(?=[\u3400-\u9fff])/g,'$1\n');
+const PN='noun|verb|adjective|adverb|preposition|conjunction|pronoun|determiner|exclamation|interjection|modal verb|phrasal verb|auxiliary verb|idiom|abbreviation|prefix|suffix|number';
+const MARK=/^([ABC][12]\s+)?\[[^\]]*\]$/;
+const hw=x=>new RegExp('^'+x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(\\s+('+PN+')(\\s*\\(.*\\))?|\\s+(mainly )?(UK|US|Australian|Canadian|Irish|Scottish|Indian)( (informal|formal|slang|old-fashioned))?)$','i');
+function parse(t){
+  const out=[];let w=null,s=null,skip=false;
+  const newSense=()=>{if(s&&(s.def||s.zh||s.ex.length)){s={pos:s.pos,def:'',zh:'',ex:[]};w.senses.push(s)}};
+  clean(t).split(/\n\s*\n/).forEach(b=>{
+    const L=b.split('\n').map(x=>x.trim()).filter(x=>x&&!NOISE.test(x)&&!LABEL.test(x));if(!L.length)return;
+    let i=0;
+    if(!POS.test(L[0])&&L.length>1&&POS.test(L[1])){
+      w=out.find(x=>x.w.toLowerCase()==L[0].toLowerCase());
+      if(!w){w={w:L[0],senses:[]};out.push(w)}
+      i=1;s=null;skip=false;
+    }else if(!w){w={w:L[0],senses:[]};out.push(w);i=1}
+    for(;i<L.length;i++){const l=L[i];
+      if(POS.test(l)){skip=false;s={pos:l.match(POS)[1].toLowerCase(),def:'',zh:'',ex:[]};w.senses.push(s);continue}
+      if(l.toLowerCase()==w.w.toLowerCase()){skip=false;continue}
+      if(MARK.test(l)||hw(w.w).test(l)){skip=false;newSense();continue}
+      if(SYN.test(l)){skip=true;continue}
+      if(skip){if(CJK.test(l)||/[.!?]$/.test(l))skip=false;else continue}
+      if(!s){s={pos:'',def:'',zh:'',ex:[]};w.senses.push(s)}
+      const lx=s.ex[s.ex.length-1];
+      if(!CJK.test(l)){if(!s.def&&!s.ex.length)s.def=l;else s.ex.push({en:l,zh:''})}
+      else if(!s.zh&&!s.ex.length)s.zh=l;
+      else if(lx&&!lx.zh)lx.zh=l;
+    }
+  });
+  return out;
+}
+const toText=c=>[c.w,...c.senses.flatMap(s=>[s.pos,s.def,s.zh,...s.ex.flatMap(e=>[e.en,e.zh])])].filter(Boolean).join('\n');
+const mk=o=>({id:Date.now()+Math.random(),w:o.w,senses:o.senses,ease:+S.ease||2.5,iv:0,due:day(),reps:0});
+const SEED=`appliance
+noun
+a device, machine, or piece of equipment, especially an electrical one that is used in the house, such as a cooker or washing machine
+裝置，器械;（尤指）家用電器
+electric/domestic/household appliances
+電器／家用電器／家電
+The man is fixing appliance.
+
+crawl
+verb
+to move along on hands and knees or with your body stretched out along a surface
+緩慢移動；艱難前行；爬行；匍匐前進
+The child crawled across the floor.
+那個孩子爬過了地板。
+Megan has just learned to crawl.
+梅甘剛學會爬。
+The man is crawling on the floor.
+verb
+to try hard to please in order to get an advantage
+巴結，討好;阿諛奉承;卑躬屈膝
+I don't like people who crawl.
+我不喜歡卑躬屈膝的人。
+noun
+a style of swimming in which you move your arms over your head and kick with straight legs
+自由泳;爬泳
+noun
+a very slow speed
+緩慢移動;徐行;爬行
+Traffic moved forward at a crawl.
+車輛緩緩向前移動。`;
+try{cards=JSON.parse(localStorage.getItem(K)||localStorage.getItem('vocab-v1')||'null')||[]}catch(e){}
+cards.forEach(c=>{if(!c.senses)c.senses=[{pos:'',def:'',zh:c.m||'',ex:c.e?[{en:c.e,zh:''}]:[]}]});
+if(!cards.length)cards=parse(SEED).map(mk);
+const save=()=>{try{localStorage.setItem(K,JSON.stringify(cards))}catch(e){}};
+const due=()=>cards.filter(c=>c.due<=day());
+function buildQueue(){queue=due().sort(()=>Math.random()-.5);flip=false}
+function rate(q){
+  const c=queue.shift();
+  if(q==0){c.ease=Math.max(1.3,c.ease-.2);c.reps=0;c.iv=0;c.due=day();queue.push(c)}
+  else{const x=calc(c,q);c.iv=x.iv;c.ease=x.ease;c.reps=x.reps;c.due=day()+c.iv}
+  save();flip=false;render();
+}
+const nextLabel=(c,q)=>q==0?'< 1 分':calc(c,q).iv+' 天';
+function speak(w){try{const u=new SpeechSynthesisUtterance(w);u.lang='en-US';speechSynthesis.cancel();speechSynthesis.speak(u)}catch(e){}}
+const sense=s=>`<div class="sense">${s.pos?`<span class="pos">${esc(s.pos)}</span>`:''}<span class="def">${esc(s.def)}</span><div class="zh">${esc(s.zh)}</div><ul class="exs">${s.ex.map(e=>`<li>${esc(e.en)}${e.zh?`<div class="z">${esc(e.zh)}</div>`:''}</li>`).join('')}</ul></div>`;
+function render(){
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t==tab));
+  const v=document.getElementById('v');
+  if(tab=='s')return renderSet(v);
+  if(tab=='r'){
+    if(!queue.length){v.innerHTML=`<div class="card"><div class="word">🎉</div><div class="ex">今天的複習完成了！共 ${cards.length} 張卡片，明天再來</div></div><div class="row"><button class="btn" id="again">再複習一輪（全部）</button></div>`;
+      document.getElementById('again').onclick=()=>{queue=cards.slice().sort(()=>Math.random()-.5);render()};return}
+    const c=queue[0];
+    v.innerHTML=`<div class="stat">待複習 ${queue.length} 張</div><div class="card" id="cd"><div class="word">${esc(c.w)} <button class="sp" id="sp" title="發音">🔊</button></div>${flip?c.senses.map(sense).join(''):'<div class="ex">點一下卡片顯示答案</div>'}</div>`+
+    (flip?`<div class="row">${['忘記','困難','記得','簡單'].map((t,i)=>`<button data-q="${i}">${t}<small>${nextLabel(c,i)}</small></button>`).join('')}</div>`:`<div class="row"><button class="btn pri" id="show">顯示答案</button></div>`);
+    document.getElementById('sp').onclick=e=>{e.stopPropagation();speak(c.w)};
+    if(!flip){const f=()=>{flip=true;render()};document.getElementById('cd').onclick=f;document.getElementById('show').onclick=f}
+    v.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>rate(+b.dataset.q));
+  }else if(tab=='a'){
+    v.innerHTML=`<label>${editId?'編輯卡片':'貼上單字內容，可一次貼多個單字（單字之間空一行）'}</label><textarea id="tx" rows="14" placeholder="appliance&#10;noun&#10;英文解釋&#10;中文意思&#10;英文例句&#10;例句翻譯">${esc(draft)}</textarea><div class="row"><button class="btn" id="pv">整理預覽</button><button class="btn pri" id="add">${editId?'儲存修改':'新增／匯入'}</button>${editId?'<button class="btn" id="cx">取消編輯</button>':''}</div><p class="stat">${msg}</p><p class="stat">格式：第一行是單字；接著依序寫詞性、英文解釋、中文意思；之後每個例句寫一行英文、下一行中文翻譯（翻譯可省略）。同一個單字有多個詞性，就接著寫下一個詞性。直接貼劍橋字典的內容也可以，音標、等級（C2 等）、Add to word list 、同義詞／反義詞／比較清單、formal 之類的標籤與網址連結等多餘文字會自動濾掉，只留下單字、詞性、解釋、中文與例句；按「整理預覽」可先看清理後的結果。</p>`;
+    document.getElementById('pv').onclick=()=>{const t=document.getElementById('tx'),a=parse(t.value);if(a.length)t.value=a.map(toText).join('\n\n')};
+    document.getElementById('add').onclick=()=>{const arr=parse(document.getElementById('tx').value);
+      if(!arr.length){msg='沒有偵測到單字';render();return}
+      if(editId){const c=cards.find(x=>x.id==editId);if(c){c.w=arr[0].w;c.senses=arr[0].senses}msg='已儲存 ✓'}
+      else{arr.forEach(o=>cards.push(mk(o)));msg='已新增 '+arr.length+' 個單字 ✓'}
+      editId=null;draft='';save();render()};
+    if(editId)document.getElementById('cx').onclick=()=>{editId=null;draft='';msg='';render()};
+  }else{
+    v.innerHTML=`<div class="stat">共 ${cards.length} 張，今天到期 ${due().length} 張</div>`+cards.map((c,i)=>`<div class="item"><div><b>${esc(c.w)}</b> <span>${esc(c.senses[0]?c.senses[0].zh:'')}</span></div><div><button class="x" data-e="${i}" title="編輯">✎</button><button class="x" data-d="${i}" title="刪除">✕</button></div></div>`).join('')+`<label style="display:block;margin-top:18px">備份（複製下方文字，可貼回「新增」頁匯入）</label><textarea rows="5" readonly>${esc(cards.map(toText).join('\n\n'))}</textarea>`;
+    v.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{cards.splice(+b.dataset.d,1);save();render()});
+    v.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>{const c=cards[+b.dataset.e];editId=c.id;draft=toText(c);tab='a';msg='';render()});
+  }
+}
+function renderSet(v){
+  const n=(k,l,st)=>`<label>${l}</label><input type="number" step="${st||1}" min="0" data-k="${k}" value="${S[k]}">`;
+  v.innerHTML=`<label>排程模式</label><select id="md" style="width:100%;padding:10px;margin:4px 0 12px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--fg);font:inherit"><option value="sm2">自動（SM-2，間隔隨熟悉度成長）</option><option value="ladder">固定階梯（自訂每階天數）</option></select>`+
+  (S.mode=='ladder'?`<label>階梯天數（逗號分隔；「記得」升一階，「簡單」升兩階，「困難」退一階）</label><input id="ld" value="${esc(S.ladder)}">`:
+  n('first','第一次「記得」的間隔（天）')+n('second','第二次「記得」的間隔（天）')+n('easy1','第一次「簡單」的間隔（天）')+n('hard','「困難」的間隔倍率',.1)+n('bonus','「簡單」的額外倍率',.1)+n('ease','新卡片初始難度係數（越大，間隔成長越快）',.1))+
+  `<button class="btn pri" id="sv" style="width:100%">儲存設定</button><button class="btn" id="rs" style="width:100%;margin-top:8px">還原預設</button><p class="stat">${msg}</p><p class="stat">設定只影響之後的評分，已排好的到期日不會改變。</p>`;
+  const md=document.getElementById('md');md.value=S.mode;
+  md.onchange=()=>{S.mode=md.value;saveS();msg='';render()};
+  document.getElementById('sv').onclick=()=>{
+    v.querySelectorAll('[data-k]').forEach(i=>{const x=parseFloat(i.value);S[i.dataset.k]=isNaN(x)?DS[i.dataset.k]:Math.max(1,x)});
+    const ld=document.getElementById('ld');if(ld)S.ladder=ld.value.replace(/[^0-9,]/g,'')||DS.ladder;
+    saveS();msg='已儲存 ✓';render()};
+  document.getElementById('rs').onclick=()=>{S={...DS};saveS();msg='已還原預設';render()};
+}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;msg='';editId=null;draft='';if(tab=='r')buildQueue();render()});
+document.addEventListener('keydown',e=>{if(tab!='r'||!queue.length||/INPUT|TEXTAREA/.test(e.target.tagName))return;
+  if(e.key==' '&&!flip){e.preventDefault();flip=true;render()}else if(flip&&'1234'.includes(e.key))rate(+e.key-1)});
+buildQueue();render();
+</script></body></html>
