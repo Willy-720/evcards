@@ -86,7 +86,26 @@ const MORE=/^(顯示更多|更多範例|[減减]少例句|更多例句|更少例
 const PN='noun|verb|adjective|adverb|preposition|conjunction|pronoun|determiner|exclamation|interjection|modal verb|phrasal verb|auxiliary verb|idiom|abbreviation|prefix|suffix|number';
 const MARK=/^([ABC][12]\s+)?\[[^\]]*\]$/;
 const hw=x=>new RegExp('^'+x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(\\s+('+PN+')(\\s*\\[[^\\]]*\\])?(\\s*\\(.*\\))?|\\s+(mainly )?(UK|US|Australian|Canadian|Irish|Scottish|Indian)( (informal|formal|slang|old-fashioned))?)$','i');
+function extractNotes(t,notes){
+  const lines=t.split('\n'),out=[];let i=0;
+  const nxt=k=>{for(let j=k+1;j<lines.length;j++)if(lines[j].trim())return lines[j];return null};
+  const isPos=s=>s!=null&&POS.test(clean(s.trim()).split('\n')[0].replace(/^phrasal verb with .*/i,'phrasal verb'));
+  while(i<lines.length){
+    const l=lines[i];
+    if(l.trim().startsWith('💡')){
+      const buf=[l.trim().replace(/^💡\s*/,'')];i++;
+      while(i<lines.length){
+        const x=lines[i],xt=x.trim();
+        if(xt&&!xt.startsWith('💡')&&(isPos(xt)||isPos(nxt(i))))break;
+        buf.push(xt.startsWith('💡')?xt.replace(/^💡\s*/,''):x.replace(/\s+$/,''));i++;
+      }
+      notes.push(buf.join('\n').trim());out.push('💡§'+(notes.length-1),'');
+    }else{out.push(l);i++}
+  }
+  return out.join('\n');
+}
 function parse(t){
+  const notes=[];t=extractNotes(t,notes);
   const out=[];let w=null,s=null,skip=false,xs=false;
   const newSense=()=>{if(s&&(s.def||s.zh||s.ex.length)){s={pos:s.pos,def:'',zh:'',ex:[]};w.senses.push(s)}};
   clean(t).split(/\n\s*\n/).forEach(b=>{
@@ -98,7 +117,7 @@ function parse(t){
       i=1;s=null;skip=false;xs=false;
     }else if(!w){if(L[0].startsWith('💡'))return;w={w:L[0],senses:[]};out.push(w);i=1}else{newSense();xs=false}
     for(;i<L.length;i++){const l=L[i];
-      if(l.startsWith('💡')){const t=l.replace(/^💡\s*/,'');if(t)w.note=(w.note?w.note+'\n':'')+t;continue}
+      if(l.startsWith('💡§')){const t=notes[+l.slice(3)];if(t)w.note=(w.note?w.note+'\n':'')+t;continue}
       if(POS.test(l)){skip=false;xs=false;s={pos:l.match(POS)[1].toLowerCase(),def:'',zh:'',ex:[]};w.senses.push(s);continue}
       if(l.toLowerCase()==w.w.toLowerCase()){skip=false;continue}
       if(MARK.test(l)||LEVEL.test(l)||hw(w.w).test(l)){skip=false;xs=false;newSense();continue}
@@ -116,7 +135,7 @@ function parse(t){
   out.forEach(c=>c.senses=c.senses.filter(x=>x.def||x.zh||x.ex.length));
   return out;
 }
-const toText=c=>[c.w,...c.senses.flatMap(s=>[s.pos,s.def,s.zh,...s.ex.flatMap(e=>[e.en,e.zh])]),...(c.note?c.note.split('\n').map(n=>'💡 '+n):[])].filter(Boolean).join('\n');
+const toText=c=>[c.w,...c.senses.flatMap(s=>[s.pos,s.def,s.zh,...s.ex.flatMap(e=>[e.en,e.zh])]),...(c.note?['💡 '+c.note]:[])].filter(Boolean).join('\n');
 const mk=o=>({id:nid(),w:o.w,senses:o.senses,note:o.note||'',ease:+S.ease||2.5,iv:0,due:day(),reps:0});
 const nid=()=>Date.now().toString(36)+(ctr++%46656).toString(36).padStart(3,'0')+Math.random().toString(36).slice(2,5);
 const cref=id=>doc(db,'users',user.uid,'cards',String(id));
