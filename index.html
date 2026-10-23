@@ -39,6 +39,11 @@ label{color:var(--mut);font-size:.9rem}
 .menu{display:none;position:absolute;right:0;top:40px;z-index:10;min-width:210px;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;box-shadow:0 4px 14px rgba(0,0,0,.18)}
 .acct:hover .menu,.acct.open .menu{display:block}
 .menu .em{color:var(--mut);font-size:.85rem;margin-bottom:10px;word-break:break-all}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.dlg{background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:16px;padding:20px;max-width:420px;width:100%;display:flex;flex-direction:column;gap:8px}
+.dlg p{margin:0 0 6px}.dlg .btn{flex:none;text-align:left}
+.ck{color:var(--mut);font-size:.9rem;margin-top:4px}.ck input{width:auto;margin:0 6px 0 0;vertical-align:middle}
+.note{border-top:1px solid var(--bd);margin-top:10px;padding-top:10px;text-align:left}.note label{display:block}.note textarea{margin:4px 0 0;min-height:64px;resize:vertical}
 </style></head><body><main>
 <nav><button data-t="r">複習</button><button data-t="a">新增</button><button data-t="l">單字庫</button><button data-t="s">設定</button><div class="acct" id="acct" style="display:none"><button class="av" id="av" aria-label="帳號"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg></button><div class="menu"><div class="em" id="acem"></div><button class="btn" id="lo" style="width:100%"></button></div></div></nav>
 <div id="v"></div></main>
@@ -91,8 +96,9 @@ function parse(t){
       w=out.find(x=>x.w.toLowerCase()==L[0].toLowerCase());
       if(!w){w={w:L[0],senses:[]};out.push(w)}
       i=1;s=null;skip=false;xs=false;
-    }else if(!w){w={w:L[0],senses:[]};out.push(w);i=1}else{newSense();xs=false}
+    }else if(!w){if(L[0].startsWith('💡'))return;w={w:L[0],senses:[]};out.push(w);i=1}else{newSense();xs=false}
     for(;i<L.length;i++){const l=L[i];
+      if(l.startsWith('💡')){const t=l.replace(/^💡\s*/,'');if(t)w.note=(w.note?w.note+'\n':'')+t;continue}
       if(POS.test(l)){skip=false;xs=false;s={pos:l.match(POS)[1].toLowerCase(),def:'',zh:'',ex:[]};w.senses.push(s);continue}
       if(l.toLowerCase()==w.w.toLowerCase()){skip=false;continue}
       if(MARK.test(l)||LEVEL.test(l)||hw(w.w).test(l)){skip=false;xs=false;newSense();continue}
@@ -110,12 +116,20 @@ function parse(t){
   out.forEach(c=>c.senses=c.senses.filter(x=>x.def||x.zh||x.ex.length));
   return out;
 }
-const toText=c=>[c.w,...c.senses.flatMap(s=>[s.pos,s.def,s.zh,...s.ex.flatMap(e=>[e.en,e.zh])])].filter(Boolean).join('\n');
-const mk=o=>({id:nid(),w:o.w,senses:o.senses,ease:+S.ease||2.5,iv:0,due:day(),reps:0});
+const toText=c=>[c.w,...c.senses.flatMap(s=>[s.pos,s.def,s.zh,...s.ex.flatMap(e=>[e.en,e.zh])]),...(c.note?c.note.split('\n').map(n=>'💡 '+n):[])].filter(Boolean).join('\n');
+const mk=o=>({id:nid(),w:o.w,senses:o.senses,note:o.note||'',ease:+S.ease||2.5,iv:0,due:day(),reps:0});
 const nid=()=>Date.now().toString(36)+(ctr++%46656).toString(36).padStart(3,'0')+Math.random().toString(36).slice(2,5);
 const cref=id=>doc(db,'users',user.uid,'cards',String(id));
 const saveCard=c=>{if(guest){if(!cards.includes(c))cards.push(c);gsave();return Promise.resolve()}const d={...c};delete d.id;return setDoc(cref(c.id),d).catch(e=>{msg='儲存失敗：'+(e.code||e.message);render()})};
 const delCard=id=>guest?(cards=cards.filter(c=>c.id!=id),gsave(),render(),Promise.resolve()):deleteDoc(cref(id)).catch(e=>{msg='刪除失敗：'+(e.code||e.message);render()});
+const noteHtml=c=>c.note?'<div class="note">💡 '+esc(c.note).replace(/\n/g,'<br>')+'</div>':'';
+const dkey=s=>(s.def||s.zh||'').trim().toLowerCase();
+function mergeSenses(c,o){const have=new Set(c.senses.map(dkey));o.senses.forEach(s=>{if(!have.has(dkey(s))){c.senses.push(s);have.add(dkey(s))}});if(o.note&&!(c.note||'').includes(o.note))c.note=(c.note?c.note+'\n':'')+o.note}
+function askDup(w,multi){return new Promise(res=>{
+  const o=document.createElement('div');o.className='ov';
+  o.innerHTML=`<div class="dlg"><p>單字庫已經有「<b>${esc(w)}</b>」，要怎麼處理？</p><button class="btn" data-a="over">覆蓋舊內容（保留複習進度）</button><button class="btn" data-a="merge">合併（把新的詞性／義項加到原本那張卡）</button><button class="btn" data-a="both">另外新增一張</button><button class="btn" data-a="skip">略過這個單字</button>${multi?'<label class="ck"><input type="checkbox" id="dall"> 其餘重複的單字也照這樣處理</label>':''}</div>`;
+  o.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{const ck=o.querySelector('#dall');const all=!!(ck&&ck.checked);o.remove();res({a:b.dataset.a,all})});
+  document.body.appendChild(o)})}
 const due=()=>cards.filter(c=>c.due<=day());
 let qdue=0,qin=0;
 const isNew=c=>!(c.seen||c.iv>0||c.reps>0);
@@ -212,26 +226,36 @@ function render(){
     if(!queue.length){v.innerHTML=`<div class="card"><div class="word">🎉</div><div class="ex">${cards.length?'今天的複習完成了！共 '+cards.length+' 張卡片，明天再來':'還沒有單字，先到「新增」頁貼上單字吧'}</div></div><div class="row"><button class="btn" id="again">再複習一輪（全部）</button></div>`;
       document.getElementById('again').onclick=()=>{queue=cards.slice().sort(()=>Math.random()-.5);render()};return}
     const c=queue[0];
-    v.innerHTML=`<div class="stat">待複習 ${queue.length} 張（新單字 ${queue.filter(isNew).length}・複習 ${queue.filter(c=>!isNew(c)).length}）<br>今天到期共 ${qdue} 張${qin?'（其中 '+qin+' 張是今天按過「忘記」、還沒答對的）':''}・每日上限：複習 ${+S.maxRev||'不限'}・新單字 ${+S.maxNew||'不限'}</div><div class="card" id="cd"><div class="word">${esc(c.w)}</div><div class="acc">${[['US','en-US'],['UK','en-GB'],['AU','en-AU']].map(a=>`<button class="ab" data-a="${a[1]}"><b>${a[0]}</b> 🔊</button>`).join('')}</div>${flip?c.senses.map(sense).join(''):'<div class="ex">點一下卡片顯示答案</div>'}</div>`+
+    v.innerHTML=`<div class="stat">待複習 ${queue.length} 張（新單字 ${queue.filter(isNew).length}・複習 ${queue.filter(c=>!isNew(c)).length}）<br>今天到期共 ${qdue} 張${qin?'（其中 '+qin+' 張是今天按過「忘記」、還沒答對的）':''}・每日上限：複習 ${+S.maxRev||'不限'}・新單字 ${+S.maxNew||'不限'}</div><div class="card" id="cd"><div class="word">${esc(c.w)}</div><div class="acc">${[['US','en-US'],['UK','en-GB'],['AU','en-AU']].map(a=>`<button class="ab" data-a="${a[1]}"><b>${a[0]}</b> 🔊</button>`).join('')}</div>${flip?c.senses.map(sense).join('')+noteHtml(c):'<div class="ex">點一下卡片顯示答案</div>'}</div>`+
     (flip?`<div class="row">${['忘記','困難','記得','簡單'].map((t,i)=>`<button data-q="${i}">${t}<small>${nextLabel(c,i)}</small></button>`).join('')}</div>`:`<div class="row"><button class="btn pri" id="show">顯示答案</button></div>`);
     v.querySelectorAll('[data-a]').forEach(b=>b.onclick=e=>{e.stopPropagation();speak(c.w,b.dataset.a)});
     if(!flip){const f=()=>{flip=true;render()};document.getElementById('cd').onclick=f;document.getElementById('show').onclick=f}
     v.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>rate(+b.dataset.q));
   }else if(tab=='a'){
-    v.innerHTML=`<label>${editId?'編輯卡片':'貼上單字內容，可一次貼多個單字（單字之間空一行）'}<span class="tip" tabindex="0">?<span class="tb">格式說明：<br>單字<br>詞性<br>英文解釋<br>中文意思<br>英文例句<br>例句翻譯</span></span></label><textarea id="tx" rows="14">${esc(draft)}</textarea><div class="row"><button class="btn" id="pv">整理預覽</button><button class="btn pri" id="add">${editId?'儲存修改':'新增／匯入'}</button>${editId?'<button class="btn" id="cx">取消編輯</button>':''}</div><p class="stat">${msg}</p><div id="pvbox"></div>`;
+    v.innerHTML=`<label>${editId?'編輯卡片':'貼上單字內容，可一次貼多個單字（單字之間空一行）'}<span class="tip" tabindex="0">?<span class="tb">格式說明：<br>單字<br>詞性<br>英文解釋<br>中文意思<br>英文例句<br>例句翻譯<br>💡筆記（選填）</span></span></label><textarea id="tx" rows="14">${esc(draft)}</textarea><div class="row"><button class="btn" id="pv">整理預覽</button><button class="btn pri" id="add">${editId?'儲存修改':'新增／匯入'}</button>${editId?'<button class="btn" id="cx">取消編輯</button>':''}</div><p class="stat">${msg}</p><div id="pvbox"></div>`;
     document.getElementById('pv').onclick=()=>{const t=document.getElementById('tx'),a=parse(t.value),b=document.getElementById('pvbox');
       if(!a.length){b.innerHTML='<p class="stat">沒有偵測到單字</p>';return}
       t.value=a.map(toText).join('\n\n');
-      b.innerHTML='<p class="stat">預覽：單字卡背面的樣子（共 '+a.length+' 張）</p>'+a.map(c=>`<div class="card" style="margin-bottom:12px"><div class="word">${esc(c.w)}</div>${c.senses.map(sense).join('')}</div>`).join('');
+      b.innerHTML='<p class="stat">預覽：單字卡背面的樣子（共 '+a.length+' 張）</p>'+a.map(c=>`<div class="card" style="margin-bottom:12px"><div class="word">${esc(c.w)}</div>${c.senses.map(sense).join('')}${noteHtml(c)}</div>`).join('');
       b.scrollIntoView({behavior:'smooth',block:'nearest'})};
-    document.getElementById('add').onclick=()=>{const arr=parse(document.getElementById('tx').value);
+    document.getElementById('add').onclick=async()=>{const arr=parse(document.getElementById('tx').value);
       if(!arr.length){msg='沒有偵測到單字';render();return}
-      if(editId){const c=cards.find(x=>x.id==editId);if(c){c.w=arr[0].w;c.senses=arr[0].senses;saveCard(c)}msg='已儲存 ✓'}
-      else{arr.forEach(o=>saveCard(mk(o)));msg='已新增 '+arr.length+' 個單字 ✓'}
+      if(editId){const c=cards.find(x=>x.id==editId);if(c){c.w=arr[0].w;c.senses=arr[0].senses;c.note=arr[0].note||'';saveCard(c)}msg='已儲存 ✓'}
+      else{let a=0,m=0,ov=0,sk=0,all=null;
+        for(const o of arr){
+          let ex=cards.find(c=>c.w.toLowerCase()==o.w.toLowerCase());
+          if(!ex){saveCard(mk(o));a++;continue}
+          let act=all;
+          if(!act){const r=await askDup(o.w,arr.length>1);act=r.a;if(r.all)all=act;ex=cards.find(c=>c.w.toLowerCase()==o.w.toLowerCase())||ex}
+          if(act=='over'){ex.w=o.w;ex.senses=o.senses;if(o.note)ex.note=o.note;saveCard(ex);ov++}
+          else if(act=='merge'){mergeSenses(ex,o);saveCard(ex);m++}
+          else if(act=='both'){saveCard(mk(o));a++}
+          else sk++}
+        msg=[a&&'新增 '+a,ov&&'覆蓋 '+ov,m&&'合併 '+m,sk&&'略過 '+sk].filter(Boolean).join('、')+' 個單字 ✓'}
       editId=null;draft='';render()};
     if(editId)document.getElementById('cx').onclick=()=>{editId=null;draft='';msg='';render()};
   }else{
-    v.innerHTML=`<div class="stat">共 ${cards.length} 張，今天到期 ${due().length} 張</div>`+cards.map((c,i)=>`<div class="item"><div><b>${esc(c.w)}</b> <span>${esc(c.senses[0]?c.senses[0].zh:'')}</span></div><div><button class="x" data-e="${i}" title="編輯">✎</button><button class="x" data-d="${i}" title="刪除">✕</button></div></div>`).join('')+`<label style="display:block;margin-top:18px">備份（可貼回「新增」頁匯入）</label><textarea id="bk" rows="5" readonly>${esc(cards.map(toText).join('\n\n'))}</textarea><button class="btn" id="cp" style="width:100%">一鍵複製備份</button>${(!guest&&localCards().length&&!localStorage.getItem('vocab-up-'+user.uid))?'<div style="display:flex;align-items:center;gap:6px;margin-top:8px"><button class="btn" id="up">匯入這台裝置的舊版單字到雲端</button><span class="tip" tabindex="0">?<span class="tb">使用時機：<br>登入前，這個瀏覽器裡存有舊版單字<br>想把它們搬到雲端帳號時，按一次<br>雲端已有的同名單字會略過<br>匯入成功後，這個按鈕會自動消失</span></span></div>':''}<p class="stat">${msg}</p>`;
+    v.innerHTML=`<div class="stat">共 ${cards.length} 張，今天到期 ${due().length} 張</div>`+cards.map((c,i)=>`<div class="item"><div><b>${esc(c.w)}</b> <span>${esc(c.senses[0]?c.senses[0].zh:'')}</span>${c.note?' 📝':''}</div><div><button class="x" data-e="${i}" title="編輯">✎</button><button class="x" data-d="${i}" title="刪除">✕</button></div></div>`).join('')+`<label style="display:block;margin-top:18px">備份（可貼回「新增」頁匯入）</label><textarea id="bk" rows="5" readonly>${esc(cards.map(toText).join('\n\n'))}</textarea><button class="btn" id="cp" style="width:100%">一鍵複製備份</button>${(!guest&&localCards().length&&!localStorage.getItem('vocab-up-'+user.uid))?'<div style="display:flex;align-items:center;gap:6px;margin-top:8px"><button class="btn" id="up">匯入這台裝置的舊版單字到雲端</button><span class="tip" tabindex="0">?<span class="tb">使用時機：<br>登入前，這個瀏覽器裡存有舊版單字<br>想把它們搬到雲端帳號時，按一次<br>雲端已有的同名單字會略過<br>匯入成功後，這個按鈕會自動消失</span></span></div>':''}<p class="stat">${msg}</p>`;
     v.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{const c=cards[+b.dataset.d];if(c&&confirm('刪除「'+c.w+'」？'))delCard(c.id)});
     v.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>{const c=cards[+b.dataset.e];editId=c.id;draft=toText(c);tab='a';msg='';render()});
     document.getElementById('cp').onclick=async e=>{const b=e.currentTarget,t=document.getElementById('bk');
